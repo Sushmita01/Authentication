@@ -31,32 +31,52 @@ app.set('view engine', 'jade');
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
+app.use(cookieParser('12345-67890-09876-54321'));
 
 
 function auth (req,res,next) {
-  console.log(req.headers);
-  var authHeader=req.headers.authorization;
-  if (!authHeader) {
-    var err = new Error('You are not authenticated!');
-      res.setHeader('WWW-Authenticate', 'Basic');
+  console.log("cookies",req.signedCookies);
+
+  if (!req.signedCookies.user) {                //no cookies present in client side
+    var authHeader=req.headers.authorization;
+    if (!authHeader) {                          //no cookie,no auth header present
+      console.log("Need credentials!")
+      var err = new Error('You are not authenticated!');
+        res.setHeader('WWW-Authenticate', 'Basic');
+        err.status = 401;
+        next(err);
+        return;
+    }
+      var auth=new Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
+      var user=auth[0];
+      var pass=auth[1];
+      if (user == 'admin' && pass == 'password') {     //no-cookie,auth header present and verification success
+        res.cookie('user','admin', {signed:true})       //setting up the cookie
+        next(); // authorized
+      }
+    
+      else {
+        console.log("wrong credentials!")
+        var err = new Error('You are not authenticated!'); //no-cookie,auth header present but verification fail
+        res.setHeader('WWW-Authenticate', 'Basic');      
+        err.status = 401;
+        next(err);
+        return;
+    }
+  }
+  else { 
+    console.log("They have cookies!")                                             //cookies exist!
+    if (req.signedCookies.user=='admin') {        //cookie verification success
+      next();
+    }
+    else {
+      var err = new Error('You are not authenticated!');    //cookie not valid
       err.status = 401;
       next(err);
       return;
-  }
-    var auth=new Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
-    var user=auth[0];
-    var pass=auth[1];
-    if (user == 'admin' && pass == 'password') {
-      next(); // authorized
     }
-  
-    else {
-      var err = new Error('You are not authenticated!');
-      res.setHeader('WWW-Authenticate', 'Basic');      
-      err.status = 401;
-      next(err);
   }
+
 
 }
 
