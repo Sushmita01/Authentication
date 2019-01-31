@@ -4,6 +4,7 @@ const mongoose=require('mongoose');
 const Dishes=require('../models/dishes');
 
 dishRouter=express.Router();
+dishRouter.use(bodyParser.json());
 
 
 dishRouter.route('/')

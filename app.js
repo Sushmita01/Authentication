@@ -3,18 +3,19 @@ var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
-
+var session = require('express-session');
+var FileStore = require('session-file-store')(session);
+var cors=require('cors');
 var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
+var usersRouter = require('./routes/userRouter');
 var dishRouter = require('./routes/dishRouter');
 var promoRouter = require('./routes/promoRouter');
 var leaderRouter = require('./routes/leaderRouter');
 
 //db connect requirements
 const mongoose=require('mongoose');
-const Dishes=require('./models/dishes');
 const url="mongodb://localhost:27017/conFusion";
-const connect=mongoose.connect(url, { useNewUrlParser: true });
+const connect=mongoose.connect(url, { useNewUrlParser: true,useCreateIndex: true });
 
 connect.then((db)=> {
   console.log('successfully connected!');
@@ -24,56 +25,44 @@ connect.then((db)=> {
 
 var app = express();
 
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
-
+app.use(cors());
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser('12345-67890-09876-54321'));
+// app.use(cookieParser('12345-67890-09876-54321'));
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(session({
+  name:'session-id',
+  secret: '12345-67890-09876-54321',
+  saveUninitialized: false,
+  resave: false,
+  store: new FileStore()
+}))
+
+app.use('/', indexRouter);
+app.use('/users', usersRouter);
 
 
 function auth (req,res,next) {
-  console.log("cookies",req.signedCookies);
+  console.log(req.session);
 
-  if (!req.signedCookies.user) {                //no cookies present in client side
-    var authHeader=req.headers.authorization;
-    if (!authHeader) {                          //no cookie,no auth header present
-      console.log("Need credentials!")
+  if(!req.session.user) {
       var err = new Error('You are not authenticated!');
-        res.setHeader('WWW-Authenticate', 'Basic');
-        err.status = 401;
-        next(err);
-        return;
-    }
-      var auth=new Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
-      var user=auth[0];
-      var pass=auth[1];
-      if (user == 'admin' && pass == 'password') {     //no-cookie,auth header present and verification success
-        res.cookie('user','admin', {signed:true})       //setting up the cookie
-        next(); // authorized
-      }
-    
-      else {
-        console.log("wrong credentials!")
-        var err = new Error('You are not authenticated!'); //no-cookie,auth header present but verification fail
-        res.setHeader('WWW-Authenticate', 'Basic');      
-        err.status = 401;
-        next(err);
-        return;
-    }
+      err.status = 403;
+      res.send('You are not authenticated!');
+      return next(err);
   }
-  else { 
-    console.log("They have cookies!")                                             //cookies exist!
-    if (req.signedCookies.user=='admin') {        //cookie verification success
+  else {
+    if (req.session.user === 'authenticated') {
       next();
     }
     else {
-      var err = new Error('You are not authenticated!');    //cookie not valid
-      err.status = 401;
-      next(err);
-      return;
+      var err = new Error('You are not authenticated!');
+      err.status = 403;
+      res.send('You are not authenticated!');
+      return next(err);
     }
   }
 
@@ -81,10 +70,7 @@ function auth (req,res,next) {
 }
 
 app.use(auth);
-app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/', indexRouter);
-app.use('/users', usersRouter);
 app.use('/dishes', dishRouter);
 app.use('/promotions', promoRouter);
 app.use('/leaders', leaderRouter);
